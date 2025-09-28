@@ -1,13 +1,12 @@
-use std::io::SeekFrom;
-
-use binrw::{BinRead, BinWrite, binread};
+use std::io::{Write, Seek, SeekFrom};
+use binrw::{BinRead, BinWrite, binread, Endian, BinResult};
 
 use crate::bigfile::v1_06_63_02_pc::header::BigFileType;
 use crate::bigfile::versions::VersionOneple;
 use crate::helpers::DynArray;
 use crate::names::Name;
 
-#[derive(Debug, BinRead, BinWrite)]
+#[derive(Debug, BinRead)]
 pub struct DataDescription {
     pub resource_count: u32,
     pub padded_size: u64,
@@ -21,11 +20,11 @@ impl DataDescription {
 
 #[derive(Debug, BinRead)]
 pub struct Resource {
-    pub _name: Name,
-    pub _class_name: Name,
+    pub name: Name,
+    pub class_name: Name,
     pub offset: u32,
-    pub _size: u64,
-    pub _decompressed_size: u64,
+    pub size: u64,
+    pub decompressed_size: u64,
 }
 
 #[binread]
@@ -35,10 +34,10 @@ pub struct Resources {
     pub data_count: u32,
     pub data_offset: u32,
     pub working_buffer_offset: u32,
-    pub _unk1: u32,
-    pub _unk2: u64,
-    pub _padded_size: u64,
-    pub _padding_size: u64,
+    pub unk1: u32,
+    pub unk2: u64,
+    pub padded_size: u64,
+    pub padding_size: u64,
     #[br(count = data_count, pad_after = DataDescription::SIZE * 52 - DataDescription::SIZE * data_count as u64)]
     pub data_descriptions: Vec<DataDescription>,
     // Use a Vec here instead of DynArray because Resource doesn't impl BinWrite and binrw isn't smart with trait bounds
@@ -47,7 +46,7 @@ pub struct Resources {
     #[br(count = resource_count)]
     pub resources: Vec<Resource>,
     #[br(align_after = 2048)]
-    pub _unk3: u64,
+    pub unk3: u64,
 }
 
 #[derive(Debug, BinRead, BinWrite)]
@@ -76,6 +75,26 @@ pub struct Header {
     pub zero: u64,
     #[brw(align_after = 4096)]
     pub total_resource_count: u32,
+    // manually write, so bw(ignore)
+    #[bw(ignore)]
     #[br(seek_before = SeekFrom::Start(block_description_offset as u64 * 2048))]
     pub block_descriptions: DynArray<BlockDescription>,
 }
+
+impl BinWrite for DataDescription {
+    type Args<'a> = ();
+
+    fn write_options<W: Write + Seek>(
+        &self,
+        writer: &mut W,
+        endian: Endian,
+        _: Self::Args<'_>
+    ) -> BinResult<()> {
+        self.resource_count.write_options(writer, endian, ())?;
+        self.padded_size.write_options(writer, endian, ())?;
+        self.size.write_options(writer, endian, ())?;
+        self.working_buffer_offset.write_options(writer, endian, ())?;
+        Ok(())
+    }
+}
+
